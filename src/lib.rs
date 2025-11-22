@@ -1,15 +1,16 @@
 mod error;
 mod model;
+mod parser;
 
 pub use error::DiceError;
 pub use model::RollResult;
+pub use parser::{DiceRequest, dice_result};
 
 pub fn roll(expression: &str) -> Result<RollResult, DiceError> {
     Err(DiceError::InvalidFormat("Not implemented".to_string()))
 }
 
 pub fn roll_with_seed(expression: &str, seed: [u8; 32]) -> Result<RollResult, DiceError> {
-    // We'll implement this later
     todo!()
 }
 
@@ -46,5 +47,31 @@ mod tests {
             modifier: 0,
         };
         assert_eq!(result.to_string(), "[18] = 18");
+    }
+
+    #[test]
+    fn test_parse_simple_adx() {
+        let (remaining, request) = dice_result("2d6").unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(request.quantity, 2);
+        assert_eq!(request.sides, 6);
+        assert_eq!(request.modifier, 0);
+    }
+    #[test]
+    fn test_parse_with_positive_modifier() {
+        let (remaining, request) = dice_result("2d6+5").unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(request.quantity, 2);
+        assert_eq!(request.sides, 6);
+        assert_eq!(request.modifier, 5);
+    }
+
+    #[test]
+    fn test_parse_with_negative_modifier() {
+        let (remaining, request) = dice_result("2d6-5").unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(request.quantity, 2);
+        assert_eq!(request.sides, 6);
+        assert_eq!(request.modifier, -5);
     }
 }
