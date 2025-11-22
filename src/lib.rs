@@ -50,6 +50,15 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_dx() {
+        let (remaining, request) = dice_result("d6").unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(request.quantity, 1);
+        assert_eq!(request.sides, 6);
+        assert_eq!(request.modifier, 0);
+    }
+
+    #[test]
     fn test_parse_simple_adx() {
         let (remaining, request) = dice_result("2d6").unwrap();
         assert_eq!(remaining, "");
@@ -73,5 +82,14 @@ mod tests {
         assert_eq!(request.quantity, 2);
         assert_eq!(request.sides, 6);
         assert_eq!(request.modifier, -5);
+    }
+
+    #[test]
+    fn test_parse_with_whitespace() {
+        let (remaining, request) = dice_result(" 2d6 +5").unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(request.quantity, 2);
+        assert_eq!(request.sides, 6);
+        assert_eq!(request.modifier, 5);
     }
 }

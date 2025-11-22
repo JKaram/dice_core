@@ -1,7 +1,7 @@
 use nom::bytes::complete::tag;
-use nom::character::complete::{digit0, digit1, one_of};
-use nom::combinator::recognize;
-use nom::sequence::pair;
+use nom::character::complete::{digit0, digit1, one_of, space0};
+use nom::combinator::{opt, recognize};
+use nom::sequence::{pair, preceded};
 use nom::{IResult, Parser, branch::alt, combinator::map_res};
 use std::num::ParseIntError;
 
@@ -36,15 +36,20 @@ fn parse_modifier(input: &str) -> IResult<&str, i32> {
 }
 
 pub fn dice_result(expression: &str) -> IResult<&str, DiceRequest> {
-    let (remaining, (quantity, _d, sides, modifier)) =
-        (parse_quantity, parse_d, parse_sides, parse_modifier).parse(expression)?;
+    let (remaining, (quantity, _d, sides, modifier)) = (
+        preceded(space0, parse_quantity),
+        parse_d,
+        parse_sides,
+        opt(preceded(space0, parse_modifier)),
+    )
+        .parse(expression)?;
 
     Ok((
         remaining,
         DiceRequest {
             quantity,
             sides,
-            modifier,
+            modifier: modifier.unwrap_or(0),
         },
     ))
 }
