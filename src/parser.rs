@@ -1,6 +1,6 @@
 use nom::bytes::complete::tag;
 use nom::character::complete::{digit0, digit1, one_of, space0};
-use nom::combinator::{not, opt, peek, recognize};
+use nom::combinator::{not, opt, peek};
 use nom::sequence::{pair, preceded, terminated};
 use nom::{IResult, Parser, branch::alt, combinator::map_res};
 use std::num::ParseIntError;
