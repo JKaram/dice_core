@@ -1,5 +1,5 @@
 use std::fmt;
-
+#[derive(Debug)]
 pub struct RollResult {
     pub total: i32,
     pub dice_rolls: Vec<i32>,

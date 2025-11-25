@@ -11,33 +11,27 @@ use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
 pub fn roll(expression: &str) -> Result<RollResult, DiceError> {
-    let (remaining, request) = dice_result(expression)
-        .map_err(|e| DiceError::InvalidFormat(format!("Parse failed: {}", e)))?;
-
-    if !remaining.is_empty() {
-        return Err(DiceError::InvalidFormat("Unexpected input".to_string()));
-    }
-
-    validate_request(&request)?;
-
+    let request = parse_and_validate(expression)?;
     let mut rng = rand::rng();
 
     roll_dice_with_rng(&request, &mut rng)
 }
 
 pub fn roll_with_seed(expression: &str, seed: [u8; 32]) -> Result<RollResult, DiceError> {
-    let (remaining, request) = dice_result(expression)
-        .map_err(|_| DiceError::InvalidFormat("Parse failed".to_string()))?;
-
-    if !remaining.is_empty() {
-        return Err(DiceError::InvalidFormat("Unexpected input".to_string()));
-    }
-
-    validate_request(&request)?;
-
+    let request = parse_and_validate(expression)?;
     let mut rng = ChaCha20Rng::from_seed(seed);
 
     roll_dice_with_rng(&request, &mut rng)
+}
+
+fn parse_and_validate(expression: &str) -> Result<DiceRequest, DiceError> {
+    let (remaining, request) = dice_result(expression)
+        .map_err(|e| DiceError::InvalidFormat(format!("Syntax error: {}", e)))?;
+
+    validate_remaining(&remaining)?;
+    validate_request(&request)?;
+
+    Ok(request)
 }
 
 fn validate_request(request: &DiceRequest) -> Result<(), DiceError> {
@@ -50,6 +44,23 @@ fn validate_request(request: &DiceRequest) -> Result<(), DiceError> {
     if request.sides <= 0 {
         return Err(DiceError::InvalidDieSize(request.sides));
     }
+    Ok(())
+}
+
+fn validate_remaining(remaining: &str) -> Result<(), DiceError> {
+    if !remaining.is_empty() {
+        if remaining.starts_with('.') {
+            return Err(DiceError::InvalidFormat(format!(
+                "Decimals are not allowed. Found: '{}'",
+                remaining
+            )));
+        }
+        return Err(DiceError::InvalidFormat(format!(
+            "Could not parse the end of the expression: '{}'",
+            remaining
+        )));
+    }
+
     Ok(())
 }
 
@@ -170,16 +181,60 @@ mod tests {
     #[test]
     fn test_parse_with_quantity_float() {
         let expression = "1.5d6";
-        let result = roll(expression);
+        let err = roll(expression).unwrap_err();
 
-        assert!(result.is_err());
+        assert!(matches!(err, DiceError::InvalidFormat(ref msg) if msg.contains("Syntax error")));
     }
 
     #[test]
     fn test_parse_with_sides_float() {
         let expression = "1d2.6";
-        let result = roll(expression);
+        let err = roll(expression).unwrap_err();
 
-        assert!(result.is_err())
+        assert!(matches!(err, DiceError::InvalidFormat(ref msg) if msg.contains("Syntax error")));
+    }
+
+    #[test]
+    fn test_error_message_trailing_garbage() {
+        let err = roll("2d6 hello").unwrap_err();
+        assert!(
+            matches!(err, DiceError::InvalidFormat(ref msg) if msg.contains("Could not parse the end of the expression"))
+        );
+    }
+
+    #[test]
+    fn test_quantity_limit_exceeded() {
+        let result = roll("1001d6");
+
+        match result {
+            Err(DiceError::QuantityLimitExceeded(q)) => assert_eq!(q, 1001),
+            _ => panic!("Expected QuantityLimitExceeded(1001), got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_quantity_limit_boundary_ok() {
+        let result = roll("1000d6");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_quantity_zero() {
+        let result = roll("0d6");
+
+        match result {
+            Err(DiceError::InvalidQuantity(q)) => assert_eq!(q, 0),
+            _ => panic!("Expected InvalidQuantity(0), got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_invalid_die_size_zero() {
+        let result = roll("1d0");
+
+        match result {
+            Err(DiceError::InvalidDieSize(s)) => assert_eq!(s, 0),
+            _ => panic!("Expected InvalidDieSize(0), got {:?}", result),
+        }
     }
 }
