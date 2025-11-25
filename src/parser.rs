@@ -1,7 +1,7 @@
 use nom::bytes::complete::tag;
 use nom::character::complete::{digit0, digit1, one_of, space0};
-use nom::combinator::{opt, recognize};
-use nom::sequence::{pair, preceded};
+use nom::combinator::{not, opt, peek, recognize};
+use nom::sequence::{pair, preceded, terminated};
 use nom::{IResult, Parser, branch::alt, combinator::map_res};
 use std::num::ParseIntError;
 
@@ -20,11 +20,14 @@ fn str_to_i32_or_one(s: &str) -> Result<i32, ParseIntError> {
 }
 
 fn parse_quantity(input: &str) -> IResult<&str, i32> {
-    map_res(digit0, str_to_i32_or_one).parse(input)
+    let strict_digits = terminated(digit0, peek(not(tag("."))));
+    map_res(strict_digits, str_to_i32_or_one).parse(input)
 }
 
 fn parse_sides(input: &str) -> IResult<&str, i32> {
-    map_res(digit1, str_to_i32).parse(input)
+    let strict_digits = terminated(digit1, peek(not(tag("."))));
+
+    map_res(strict_digits, str_to_i32).parse(input)
 }
 
 fn parse_d(input: &str) -> IResult<&str, &str> {
@@ -32,14 +35,23 @@ fn parse_d(input: &str) -> IResult<&str, &str> {
 }
 
 fn parse_modifier(input: &str) -> IResult<&str, i32> {
-    map_res(recognize(pair(one_of("+-"), digit1)), str_to_i32).parse(input)
+    let strict_digits = terminated(digit1, peek(not(tag("."))));
+
+    map_res(
+        pair(one_of("+-"), strict_digits),
+        |(sign, s)| -> Result<i32, ParseIntError> {
+            let val = str_to_i32(s)?;
+            Ok(if sign == '-' { -val } else { val })
+        },
+    )
+    .parse(input)
 }
 
 pub fn dice_result(expression: &str) -> IResult<&str, DiceRequest> {
     let (remaining, (quantity, _d, sides, modifier)) = (
         preceded(space0, parse_quantity),
-        parse_d,
-        parse_sides,
+        preceded(space0, parse_d),
+        preceded(space0, parse_sides),
         opt(preceded(space0, parse_modifier)),
     )
         .parse(expression)?;
