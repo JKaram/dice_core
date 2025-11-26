@@ -14,6 +14,15 @@ pub enum DiceError {
     #[error("Quantity limit exceeded: {0} (maximum is 1000)")]
     QuantityLimitExceeded(i32),
 
+    #[error("Quantity cannot be a float: {0}")]
+    FloatQuantity(f64),
+
+    #[error("Die size cannot be a float: {0}")]
+    FloatDieSize(f64),
+
+    #[error("Modifier cannot be a float: {0}")]
+    FloatModifier(f64),
+
     #[error("Parse error: {0}")]
     ParseError(#[from] std::num::ParseIntError),
 }

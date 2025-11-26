@@ -35,14 +35,27 @@ fn parse_and_validate(expression: &str) -> Result<DiceRequest, DiceError> {
 }
 
 fn validate_request(request: &DiceRequest) -> Result<(), DiceError> {
-    if request.quantity > 1000 {
-        return Err(DiceError::QuantityLimitExceeded(request.quantity));
+    if request.quantity.fract() != 0.0 {
+        return Err(DiceError::FloatQuantity(request.quantity));
     }
-    if request.quantity <= 0 {
-        return Err(DiceError::InvalidQuantity(request.quantity));
+    if request.sides.fract() != 0.0 {
+        return Err(DiceError::FloatDieSize(request.sides));
     }
-    if request.sides <= 0 {
-        return Err(DiceError::InvalidDieSize(request.sides));
+    if request.modifier.fract() != 0.0 {
+        return Err(DiceError::FloatModifier(request.modifier));
+    }
+
+    let quantity = request.quantity as i32;
+    let sides = request.sides as i32;
+
+    if quantity > 1000 {
+        return Err(DiceError::QuantityLimitExceeded(quantity));
+    }
+    if quantity <= 0 {
+        return Err(DiceError::InvalidQuantity(quantity));
+    }
+    if sides <= 0 {
+        return Err(DiceError::InvalidDieSize(sides));
     }
     Ok(())
 }
@@ -67,18 +80,22 @@ fn validate_remaining(remaining: &str) -> Result<(), DiceError> {
 fn roll_dice_with_rng<R: Rng>(request: &DiceRequest, rng: &mut R) -> Result<RollResult, DiceError> {
     let mut dice_rolls = Vec::new();
 
-    for _ in 0..request.quantity {
-        let roll = rng.random_range(1..=request.sides);
+    let quantity = request.quantity as i32;
+    let sides = request.sides as i32;
+    let modifier = request.modifier as i32;
+
+    for _ in 0..quantity {
+        let roll = rng.random_range(1..=sides);
         dice_rolls.push(roll);
     }
 
     let dice_sum: i32 = dice_rolls.iter().sum();
-    let total = dice_sum + request.modifier;
+    let total = dice_sum + modifier;
 
     Ok(RollResult {
         total,
         dice_rolls,
-        modifier: request.modifier,
+        modifier: modifier,
     })
 }
 
@@ -121,53 +138,52 @@ mod tests {
     fn test_parse_dx() {
         let (remaining, request) = dice_result("d6").unwrap();
         assert_eq!(remaining, "");
-        assert_eq!(request.quantity, 1);
-        assert_eq!(request.sides, 6);
-        assert_eq!(request.modifier, 0);
+        assert_eq!(request.quantity, 1.0);
+        assert_eq!(request.sides, 6.0);
+        assert_eq!(request.modifier, 0.0);
     }
 
     #[test]
     fn test_parse_simple_adx() {
         let (remaining, request) = dice_result("2d6").unwrap();
         assert_eq!(remaining, "");
-        assert_eq!(request.quantity, 2);
-        assert_eq!(request.sides, 6);
-        assert_eq!(request.modifier, 0);
+        assert_eq!(request.quantity, 2.0);
+        assert_eq!(request.sides, 6.0);
+        assert_eq!(request.modifier, 0.0);
     }
     #[test]
     fn test_parse_with_positive_modifier() {
         let (remaining, request) = dice_result("2d6+5").unwrap();
         assert_eq!(remaining, "");
-        assert_eq!(request.quantity, 2);
-        assert_eq!(request.sides, 6);
-        assert_eq!(request.modifier, 5);
+        assert_eq!(request.quantity, 2.0);
+        assert_eq!(request.sides, 6.0);
+        assert_eq!(request.modifier, 5.0);
     }
 
     #[test]
     fn test_parse_with_negative_modifier() {
         let (remaining, request) = dice_result("2d6-5").unwrap();
         assert_eq!(remaining, "");
-        assert_eq!(request.quantity, 2);
-        assert_eq!(request.sides, 6);
-        assert_eq!(request.modifier, -5);
+        assert_eq!(request.quantity, 2.0);
+        assert_eq!(request.sides, 6.0);
+        assert_eq!(request.modifier, -5.0);
     }
 
     #[test]
     fn test_parse_with_whitespace() {
         let (remaining, request) = dice_result(" 2d6 +5").unwrap();
         assert_eq!(remaining, "");
-        assert_eq!(request.quantity, 2);
-        assert_eq!(request.sides, 6);
-        assert_eq!(request.modifier, 5);
+        assert_eq!(request.quantity, 2.0);
+        assert_eq!(request.sides, 6.0);
+        assert_eq!(request.modifier, 5.0);
     }
 
     #[test]
     fn test_parse_with_bad_operator() {
         let (remaining, request) = dice_result("2d1*5").unwrap();
-        assert_eq!(remaining, "");
-        assert_eq!(request.quantity, 2);
-        assert_eq!(request.sides, 0);
-        assert_eq!(request.modifier, 5);
+        assert_eq!(remaining, "*5");
+        assert_eq!(request.quantity, 2.0);
+        assert_eq!(request.sides, 1.0);
     }
 
     #[test]
@@ -183,7 +199,10 @@ mod tests {
         let expression = "1.5d6";
         let err = roll(expression).unwrap_err();
 
-        assert!(matches!(err, DiceError::InvalidFormat(ref msg) if msg.contains("Syntax error")));
+        match err {
+            DiceError::FloatQuantity(val) => assert_eq!(val, 1.5),
+            _ => panic!("Expected FloatQuantity(1.5), got {:?}", err),
+        }
     }
 
     #[test]
@@ -191,7 +210,21 @@ mod tests {
         let expression = "1d2.6";
         let err = roll(expression).unwrap_err();
 
-        assert!(matches!(err, DiceError::InvalidFormat(ref msg) if msg.contains("Syntax error")));
+        match err {
+            DiceError::FloatDieSize(val) => assert_eq!(val, 2.6),
+            _ => panic!("Expected FloatDieSize(2.6), got {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_parse_with_modifier_float() {
+        let expression = "1d6+2.5";
+        let err = roll(expression).unwrap_err();
+
+        match err {
+            DiceError::FloatModifier(val) => assert_eq!(val, 2.5),
+            _ => panic!("Expected FloatModifier(2.5), got {:?}", err),
+        }
     }
 
     #[test]
