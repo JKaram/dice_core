@@ -1,8 +1,8 @@
-# **dice\_core**
+# **dice_core**
 
-dice\_core is a lightweight, robust dice rolling library for Rust. It parses standard dice notation (e.g., 2d6+5) and generates random results, providing detailed output including individual die rolls and totals.
+`dice_core` is a lightweight, robust dice rolling library for Rust. It parses standard dice notation (e.g., 2d6+5) and generates random results, providing detailed output including individual die rolls and totals.
 
-It uses nom for efficient parsing and rand for random number generation, with support for seeded rolls via rand\_chacha.
+It uses nom for efficient parsing and rand for random number generation, with support for seeded rolls via rand_chacha.
 
 ## **Features**
 
@@ -14,42 +14,46 @@ It uses nom for efficient parsing and rand for random number generation, with su
 
 ## **Usage**
 
-### **1\. Basic Rolling**
+### **1. Basic Rolling**
 
 Use the roll function to parse a string and get a random result.
 
-use dice\_core::roll;
+```rust
+use dice_core::roll;
 
 fn main() {  
     match roll("2d6+3") {  
-        Ok(result) \=\> {  
-            // The Display impl formats it nicely: "\[3, 5\] \+ 3 \= 11"  
-            println\!("Result: {}", result);   
+        Ok(result) => {  
+            // The Display impl formats it nicely: "[3, 5] + 3 = 11"  
+            println!("Result: {}", result);   
               
             // You can also access fields directly  
-            println\!("Total: {}", result.total);  
-            println\!("Rolls: {:?}", result.dice\_rolls);  
+            println!("Total: {}", result.total);  
+            println!("Rolls: {:?}", result.dice_rolls);  
         }  
-        Err(e) \=\> eprintln\!("Error: {}", e),  
+        Err(e) => eprintln!("Error: {}", e),  
     }  
 }
+```
 
-### **2\. Deterministic (Seeded) Rolling**
+### **2. Deterministic (Seeded) Rolling**
 
-Use roll\_with\_seed if you need reproducible results (e.g., for testing or replay systems).
+Use `roll_with_seed` if you need reproducible results (e.g., for testing or replay systems).
 
-use dice\_core::roll\_with\_seed;
+```rust
+use dice_core::roll_with_seed;
 
 fn main() {  
-    let seed \= \[42; 32\]; // 32-byte array  
-    let result \= roll\_with\_seed("1d20", seed).unwrap();  
+    let seed = [42; 32]; // 32-byte array  
+    let result = roll_with_seed("1d20", seed).unwrap();  
       
-    println\!("{}", result);  
+    println!("{}", result);  
 }
+```
 
 ## **Dice Notation**
 
-The library accepts strings in the format: \[quantity\]d\[sides\]\[modifier\]
+The library accepts strings in the format: `[quantity]d[sides][modifier]`
 
 ### **Valid Examples**
 
@@ -80,7 +84,7 @@ The parser is strict about integer formats and trailing garbage to ensure accura
 
 The library returns a DiceError enum on failure, covering:
 
-* InvalidFormat: Malformed strings or trailing garbage.  
-* InvalidQuantity: Zero or negative dice count.  
-* InvalidDieSize: Zero or negative die sides.  
-* QuantityLimitExceeded: Requesting more than 1000 dice.
+* `InvalidFormat`: Malformed strings or trailing garbage.  
+* `InvalidQuantity`: Zero or negative dice count.  
+* `InvalidDieSize`: Zero or negative die sides.  
+* `QuantityLimitExceeded`: Requesting more than 1000 dice.
