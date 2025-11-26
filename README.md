@@ -1,92 +1,86 @@
 # **dice\_core**
 
-A robust, safe, and flexible dice rolling library for Rust. dice\_core parses standard dice notation (e.g., 2d6+5), validates input limits, and provides both standard random rolling and deterministic seeded rolling.
+dice\_core is a lightweight, robust dice rolling library for Rust. It parses standard dice notation (e.g., 2d6+5) and generates random results, providing detailed output including individual die rolls and totals.
 
-Designed with strict parsing rules to prevent ambiguity (e.g., rejecting floating point quantities) and detailed error reporting.
+It uses nom for efficient parsing and rand for random number generation, with support for seeded rolls via rand\_chacha.
 
 ## **Features**
 
-* **Standard Notation**: Supports NdS, NdS+M, NdS-M (e.g., 1d20, 2d6+4, 3d8-2).  
-* **Strict Parsing**: Uses nom for parser combinators to ensure input is well-formed. Rejects invalid inputs like 1.5d6 or 2d0.  
-* **Safe Validation**: Enforces reasonable limits (max 1000 dice, positive die sizes) to prevent resource exhaustion or panic.  
-* **Seeded RNG**: Supports roll\_with\_seed using ChaCha20Rng for deterministic results (useful for replay systems, tests, or games).  
-* **Detailed Errors**: Custom DiceError enum provides clear, context-aware feedback for parsing and validation failures.  
-* **Rich Results**: Returns a RollResult struct containing the total, individual die rolls, and the applied modifier.
-
-## **Installation**
-
-Add this to your Cargo.toml:
-
-\[dependencies\]  
-dice\_core \= { path \= "." } \# Or git repo if published  
-rand \= "0.8"
+* **Standard Notation:** Supports AdX (quantity d sides) syntax.  
+* **Modifiers:** Supports positive and negative modifiers (e.g., \+5, \-2).  
+* **Detailed Results:** Returns the total sum, individual die faces, and the applied modifier.  
+* **Seeded RNG:** Supports deterministic rolling using a 32-byte seed.  
+* **Safe Parsing:** Handles whitespace, case-insensitivity (d or D), and prevents excessive values (max 1000 dice).
 
 ## **Usage**
 
-### **Basic Rolling**
+### **1\. Basic Rolling**
 
-The roll function uses the thread-local random number generator.
+Use the roll function to parse a string and get a random result.
 
 use dice\_core::roll;
 
 fn main() {  
-    match roll("2d6+5") {  
+    match roll("2d6+3") {  
         Ok(result) \=\> {  
+            // The Display impl formats it nicely: "\[3, 5\] \+ 3 \= 11"  
+            println\!("Result: {}", result);   
+              
+            // You can also access fields directly  
             println\!("Total: {}", result.total);  
             println\!("Rolls: {:?}", result.dice\_rolls);  
-            println\!("Formatted: {}", result); // e.g., "\[3, 5\] \+ 5 \= 13"  
         }  
         Err(e) \=\> eprintln\!("Error: {}", e),  
     }  
 }
 
-### **Deterministic (Seeded) Rolling**
+### **2\. Deterministic (Seeded) Rolling**
 
-Use roll\_with\_seed when you need reproducible results. This uses the ChaCha20 algorithm.
+Use roll\_with\_seed if you need reproducible results (e.g., for testing or replay systems).
 
 use dice\_core::roll\_with\_seed;
 
 fn main() {  
-    // 32-byte array for the seed  
-    let seed \= \[42; 32\];   
-      
+    let seed \= \[42; 32\]; // 32-byte array  
     let result \= roll\_with\_seed("1d20", seed).unwrap();  
       
-    // This will output the same result every time for the same seed  
-    println\!("Seeded Roll: {}", result.total);  
+    println\!("{}", result);  
 }
 
-## **Supported Notation**
+## **Dice Notation**
 
-| Expression | Description |
+The library accepts strings in the format: \[quantity\]d\[sides\]\[modifier\]
+
+### **Valid Examples**
+
+| String | Description |
 | :---- | :---- |
-| d20 | Roll one 20-sided die. |
-| 1d20 | Explicitly roll one 20-sided die. |
-| 2d6 | Roll two 6-sided dice and sum them. |
-| 2d6+5 | Roll two 6-sided dice, sum them, and add 5\. |
-| 3d8-2 | Roll three 8-sided dice, sum them, and subtract 2\. |
-| 2 d 6 | Whitespace is forgiving between components. |
+| 2d6 | Roll two 6-sided dice. |
+| d20 | Roll one 20-sided die (quantity defaults to 1). |
+| 2d6+5 | Roll two 6-sided dice and add 5 to the total. |
+| 3d8-2 | Roll three 8-sided dice and subtract 2 from the total. |
+| 2D6 | Case insensitive ('d' or 'D'). |
+| 2d6 \+ 5 | Whitespace is ignored. |
 
-**Note:** Floating point numbers (e.g., 1.5d6) are explicitly **rejected** to ensure rules strictness.
+### **Invalid Examples**
+
+The parser is strict about integer formats and trailing garbage to ensure accuracy.
+
+| String | Reason |
+| :---- | :---- |
+| 1.5d6 | Decimals are not allowed in quantity. |
+| 1d2.5 | Decimals are not allowed in die sides. |
+| 0d6 | Quantity must be positive (1-1000). |
+| 1d0 | Die sides must be positive. |
+| 1001d6 | Quantity limit exceeded (max 1000). |
+| 2d6 hello | Trailing text/garbage is not allowed. |
+| 2d | Missing die sides. |
 
 ## **Error Handling**
 
-The library exposes a DiceError enum to handle specific failure cases programmatically:
+The library returns a DiceError enum on failure, covering:
 
-pub enum DiceError {  
-    InvalidFormat(String),       // Syntax errors, trailing garbage, floats  
-    InvalidQuantity(i32),        // Quantity \<= 0  
-    InvalidDieSize(i32),         // Sides \<= 0  
-    QuantityLimitExceeded(i32),  // Quantity \> 1000  
-    ParseError(ParseIntError),   // Integer parsing failures  
-}
-
-## **Development**
-
-Run tests to verify logic, strict parsing, and error messages:
-
-cargo test
-
-## **License**
-
-MIT
+* InvalidFormat: Malformed strings or trailing garbage.  
+* InvalidQuantity: Zero or negative dice count.  
+* InvalidDieSize: Zero or negative die sides.  
+* QuantityLimitExceeded: Requesting more than 1000 dice.
