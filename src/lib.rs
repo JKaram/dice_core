@@ -58,16 +58,16 @@ fn validate_request(request: &DiceRequest) -> Result<(), DiceError> {
     let sides = request.sides as i32;
 
     if quantity > 1000 {
-        return Err(DiceError::QuantityLimitExceeded(quantity));
+        return Err(DiceError::LimitExceeded(DiceComponent::Quantity, quantity));
     }
     if quantity <= 0 {
-        return Err(DiceError::InvalidQuantity(quantity));
+        return Err(DiceError::BelowMinimum(DiceComponent::Quantity, quantity));
     }
     if sides <= 0 {
-        return Err(DiceError::InvalidDieSize(sides));
+        return Err(DiceError::BelowMinimum(DiceComponent::Sides, sides));
     }
     if sides > 100 {
-        return Err(DiceError::QuantityLimitExceeded(sides));
+        return Err(DiceError::LimitExceeded(DiceComponent::Sides, sides));
     }
     Ok(())
 }
@@ -246,8 +246,8 @@ mod tests {
         let result = roll("1d101");
 
         match result {
-            Err(DiceError::QuantityLimitExceeded(s)) => assert_eq!(s, 101),
-            _ => panic!("Expected QuantityLimitExceeded(101)"),
+            Err(DiceError::LimitExceeded(DiceComponent::Sides, s)) => assert_eq!(s, 101),
+            _ => panic!("Expected LimitExeeded(101)"),
         }
     }
 
@@ -256,8 +256,8 @@ mod tests {
         let result = roll("1001d6");
 
         match result {
-            Err(DiceError::QuantityLimitExceeded(q)) => assert_eq!(q, 1001),
-            _ => panic!("Expected QuantityLimitExceeded(1001)"),
+            Err(DiceError::LimitExceeded(DiceComponent::Quantity, q)) => assert_eq!(q, 1001),
+            _ => panic!("Expected LimitExeeded(1001)"),
         }
     }
 
@@ -272,7 +272,7 @@ mod tests {
         let result = roll("0d6");
 
         match result {
-            Err(DiceError::InvalidQuantity(q)) => assert_eq!(q, 0),
+            Err(DiceError::BelowMinimum(DiceComponent::Quantity, q)) => assert_eq!(q, 0),
             _ => panic!("Expected InvalidQuantity(0)"),
         }
     }
@@ -282,7 +282,7 @@ mod tests {
         let result = roll("1d0");
 
         match result {
-            Err(DiceError::InvalidDieSize(s)) => assert_eq!(s, 0),
+            Err(DiceError::BelowMinimum(DiceComponent::Sides, s)) => assert_eq!(s, 0),
             _ => panic!("Expected InvalidDieSize(0)"),
         }
     }

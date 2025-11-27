@@ -1,6 +1,6 @@
 # **dice_core**
 
-dice_core is a lightweight, robust dice rolling library for Rust. It parses standard dice notation (e.g., 2d6+5) and generates random results, providing detailed output including individual die rolls and totals.
+dice_core parses standard dice notation (e.g., 2d6+5) and generates random results, providing detailed output including individual die rolls and totals.
 
 ## **Features**
 
@@ -78,30 +78,29 @@ The library accepts strings in the format: `[quantity]d[sides][modifier]`
 | `2D6`       | Case insensitive ('d' or 'D').                   |
 | `2d6 + 5`   | Whitespace is ignored.                           |
 
-### **Invalid Examples**
+### Error Handling
 
-The parser enforces integer-only values and checks boundaries.
+The library uses a custom `DiceError` enum to handle parsing and validation failures. Errors are categorized by the type of violation (e.g., floating point usage, limits exceeded).
 
-| String      | Reason                                 | Error Type              |
-| :---------- | :------------------------------------- | :---------------------- |
-| `1.5d6`     | Decimals are not allowed in quantity.  | `FloatQuantity`         |
-| `1d2.5`     | Decimals are not allowed in die sides. | `FloatDieSize`          |
-| `1d6+0.5`   | Decimals are not allowed in modifiers. | `FloatModifier`         |
-| `0d6`       | Quantity must be positive (1-1000).    | `InvalidQuantity`       |
-| `1d0`       | Die sides must be positive.            | `InvalidDieSize`        |
-| `1001d6`    | Quantity limit exceeded (max 1000).    | `QuantityLimitExceeded` |
-| `2d6 hello` | Trailing text/garbage is not allowed.  | `InvalidFormat`         |
+#### Error Types
 
-## **Error Handling**
+* **`DiceError::InvalidFormat(String)`**: Returned when the parser cannot understand the syntax, or if there is trailing garbage after a valid expression.
+* **`DiceError::FloatParseError(DiceComponent, f64)`**: Returned when a decimal is used where an integer is required (quantity, sides, or modifiers).
+* **`DiceError::LimitExceeded(DiceComponent, i32)`**: Returned when a value exceeds the maximum allowed limit (Max Quantity: 1000, Max Sides: 100).
+* **`DiceError::BelowMinimum(DiceComponent, i32)`**: Returned when a value is too low (Quantity and Sides must be positive integers > 0).
 
-The library returns a `DiceError` enum on failure. This allows you to match on specific error cases if needed.
+#### Invalid Examples
 
-* **InvalidFormat**: Malformed strings or trailing garbage characters.  
-* **InvalidQuantity**: Zero or negative dice count.  
-* **InvalidDieSize**: Zero or negative die sides.  
-* **QuantityLimitExceeded**: Requesting more than 1000 dice.  
-* **FloatParseError**: Floats will be rejected.
-* **ParseError**: Generic catch for all other errors.
+| Expression | Error Variant | Component | Reason |
+| :--- | :--- | :--- | :--- |
+| `1.5d6` | `FloatParseError` | `Quantity` | Quantity cannot be a float. |
+| `1d6.2` | `FloatParseError` | `Sides` | Die size cannot be a float. |
+| `1d6+1.5` | `FloatParseError` | `Modifier` | Modifier cannot be a float. |
+| `1001d6` | `LimitExceeded` | `Quantity` | Quantity cannot exceed 1000. |
+| `1d101` | `LimitExceeded` | `Sides` | Die size cannot exceed 100. |
+| `0d6` | `BelowMinimum` | `Quantity` | Quantity must be at least 1. |
+| `1d0` | `BelowMinimum` | `Sides` | Die size must be at least 1. |
+| `2d6 hello`| `InvalidFormat` | N/A | Expression contains trailing garbage. |
 
 ## **Future Features**
 
