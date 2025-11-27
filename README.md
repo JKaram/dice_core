@@ -2,8 +2,6 @@
 
 dice_core is a lightweight, robust dice rolling library for Rust. It parses standard dice notation (e.g., 2d6+5) and generates random results, providing detailed output including individual die rolls and totals.
 
-It uses nom for efficient parsing and rand for random number generation, with support for seeded rolls via rand_chacha.
-
 ## **Features**
 
 * **Standard Notation:** Supports AdX (quantity d sides) syntax.  
@@ -36,9 +34,9 @@ fn main() {
 }
 ```
 
-### **2. Deterministic (Seeded) Rolling**
+### **2. Deterministic Rolling**
 
-Use roll_with_seed if you need reproducible results (e.g., for testing or replay systems).
+Use `roll_with_seed` if you need reproducible results (e.g. for testing or replay systems).
 
 ```rust
 use dice_core::roll_with_seed;
@@ -53,7 +51,7 @@ fn main() {
 
 ## **The RollResult Struct**
 
-On a successful roll, the library returns a RollResult struct containing detailed information about the operation.
+On a successful roll, the library returns a `RollResult` struct containing detailed information about the operation.
 
 ```rust
 pub struct RollResult {  
@@ -63,7 +61,7 @@ pub struct RollResult {
 }
 ```
 
-The struct implements std::fmt::Display, allowing you to print it directly to get a readable equation string (e.g., `[4, 2] + 5 = 11)`).
+The struct implements `std::fmt::Display`, allowing you to print it directly to get a readable equation string (e.g., `[4, 2] + 5 = 11)`).
 
 ## **Dice Notation**
 
@@ -96,21 +94,20 @@ The parser enforces integer-only values and checks boundaries.
 
 ## **Error Handling**
 
-The library returns a DiceError enum on failure. This allows you to match on specific error cases if needed.
+The library returns a `DiceError` enum on failure. This allows you to match on specific error cases if needed.
 
 * **InvalidFormat**: Malformed strings or trailing garbage characters.  
 * **InvalidQuantity**: Zero or negative dice count.  
 * **InvalidDieSize**: Zero or negative die sides.  
 * **QuantityLimitExceeded**: Requesting more than 1000 dice.  
-* **FloatQuantity**: The quantity provided was a decimal (e.g., 1.5d6).  
-* **FloatDieSize**: The die size provided was a decimal (e.g., 1d2.5).  
-* **FloatModifier**: The modifier provided was a decimal (e.g., \+1.5).
+* **FloatParseError**: Floats will be rejected.
+* **ParseError**: Generic catch for all other errors.
 
-## **⛔ Out of Scope (Future Features)**
+## **Future Features**
 
-The following features are explicitly **not** part of this MVP and should be rejected by the parser (likely with DiceError::InvalidFormat):
+The following features are on the herizon:
 
-* **High-Volume Rolls:** The crate will enforce a hard limit of **1,000** dice per roll (e.g., 1000d6). Any quantity above this must return a DiceError::QuantityLimitExceeded.  
+* **High-Volume Rolls:** The crate will enforce a hard limit of **1,000** dice per roll (e.g., 1000d6).
 * **Multiple Dice Terms:** (e.g., 1d20+1d4)  
 * **Complex Math:** (e.g., (1d20+5)/2, 1d20*10)  
 * **"Drop/Keep" Notation:** (e.g., 4d6kh3 - "roll 4 d6, keep highest 3")  

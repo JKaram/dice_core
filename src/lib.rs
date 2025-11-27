@@ -2,7 +2,7 @@ mod error;
 mod model;
 mod parser;
 
-pub use error::DiceError;
+pub use error::{DiceComponent, DiceError};
 pub use model::RollResult;
 pub use parser::{DiceRequest, dice_result};
 
@@ -36,13 +36,22 @@ fn parse_and_validate(expression: &str) -> Result<DiceRequest, DiceError> {
 
 fn validate_request(request: &DiceRequest) -> Result<(), DiceError> {
     if request.quantity.fract() != 0.0 {
-        return Err(DiceError::FloatQuantity(request.quantity));
+        return Err(DiceError::FloatParseError(
+            DiceComponent::Quantity,
+            request.quantity,
+        ));
     }
     if request.sides.fract() != 0.0 {
-        return Err(DiceError::FloatDieSize(request.sides));
+        return Err(DiceError::FloatParseError(
+            DiceComponent::Sides,
+            request.sides,
+        ));
     }
     if request.modifier.fract() != 0.0 {
-        return Err(DiceError::FloatModifier(request.modifier));
+        return Err(DiceError::FloatParseError(
+            DiceComponent::Modifier,
+            request.modifier,
+        ));
     }
 
     let quantity = request.quantity as i32;
@@ -57,17 +66,14 @@ fn validate_request(request: &DiceRequest) -> Result<(), DiceError> {
     if sides <= 0 {
         return Err(DiceError::InvalidDieSize(sides));
     }
+    if sides > 100 {
+        return Err(DiceError::QuantityLimitExceeded(sides));
+    }
     Ok(())
 }
 
 fn validate_remaining(remaining: &str) -> Result<(), DiceError> {
     if !remaining.is_empty() {
-        if remaining.starts_with('.') {
-            return Err(DiceError::InvalidFormat(format!(
-                "Decimals are not allowed. Found: '{}'",
-                remaining
-            )));
-        }
         return Err(DiceError::InvalidFormat(format!(
             "Could not parse the end of the expression: '{}'",
             remaining
@@ -95,7 +101,7 @@ fn roll_dice_with_rng<R: Rng>(request: &DiceRequest, rng: &mut R) -> Result<Roll
     Ok(RollResult {
         total,
         dice_rolls,
-        modifier: modifier,
+        modifier,
     })
 }
 
@@ -197,42 +203,52 @@ mod tests {
     #[test]
     fn test_parse_with_quantity_float() {
         let expression = "1.5d6";
-        let err = roll(expression).unwrap_err();
+        let err = roll(expression);
 
         match err {
-            DiceError::FloatQuantity(val) => assert_eq!(val, 1.5),
-            _ => panic!("Expected FloatQuantity(1.5), got {:?}", err),
+            Err(DiceError::FloatParseError(DiceComponent::Quantity, val)) => assert_eq!(val, 1.5),
+            _ => panic!("Expected FloatParseError(Quantity, 1.5)"),
         }
     }
 
     #[test]
     fn test_parse_with_sides_float() {
         let expression = "1d2.6";
-        let err = roll(expression).unwrap_err();
+        let err = roll(expression);
 
         match err {
-            DiceError::FloatDieSize(val) => assert_eq!(val, 2.6),
-            _ => panic!("Expected FloatDieSize(2.6), got {:?}", err),
+            Err(DiceError::FloatParseError(DiceComponent::Sides, val)) => assert_eq!(val, 2.6),
+            _ => panic!("Expected FloatParseError(Sides, 2.6)"),
         }
     }
 
     #[test]
     fn test_parse_with_modifier_float() {
         let expression = "1d6+2.5";
-        let err = roll(expression).unwrap_err();
+        let err = roll(expression);
 
         match err {
-            DiceError::FloatModifier(val) => assert_eq!(val, 2.5),
-            _ => panic!("Expected FloatModifier(2.5), got {:?}", err),
+            Err(DiceError::FloatParseError(DiceComponent::Modifier, val)) => assert_eq!(val, 2.5),
+            _ => panic!("Expected FloatParseError(Modifier, 2.5)"),
         }
     }
 
     #[test]
     fn test_error_message_trailing_garbage() {
-        let err = roll("2d6 hello").unwrap_err();
+        let err = roll("2d6 hello");
         assert!(
-            matches!(err, DiceError::InvalidFormat(ref msg) if msg.contains("Could not parse the end of the expression"))
+            matches!(err, Err(DiceError::InvalidFormat(ref msg)) if msg.contains("Could not parse the end of the expression"))
         );
+    }
+
+    #[test]
+    fn test_sides_limit_exceeded() {
+        let result = roll("1d101");
+
+        match result {
+            Err(DiceError::QuantityLimitExceeded(s)) => assert_eq!(s, 101),
+            _ => panic!("Expected QuantityLimitExceeded(101)"),
+        }
     }
 
     #[test]
@@ -241,7 +257,7 @@ mod tests {
 
         match result {
             Err(DiceError::QuantityLimitExceeded(q)) => assert_eq!(q, 1001),
-            _ => panic!("Expected QuantityLimitExceeded(1001), got {:?}", result),
+            _ => panic!("Expected QuantityLimitExceeded(1001)"),
         }
     }
 
@@ -257,7 +273,7 @@ mod tests {
 
         match result {
             Err(DiceError::InvalidQuantity(q)) => assert_eq!(q, 0),
-            _ => panic!("Expected InvalidQuantity(0), got {:?}", result),
+            _ => panic!("Expected InvalidQuantity(0)"),
         }
     }
 
@@ -267,7 +283,7 @@ mod tests {
 
         match result {
             Err(DiceError::InvalidDieSize(s)) => assert_eq!(s, 0),
-            _ => panic!("Expected InvalidDieSize(0), got {:?}", result),
+            _ => panic!("Expected InvalidDieSize(0)"),
         }
     }
 }
