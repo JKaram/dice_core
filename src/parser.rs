@@ -1,3 +1,7 @@
+//! Parser for dice notation expressions.
+//!
+//! Uses nom for parsing standard dice notation like `2d6`, `1d20+5`, or `1d20+2d6-3`.
+
 use nom::bytes::complete::tag;
 use nom::character::complete::one_of;
 use nom::combinator::map;
@@ -6,16 +10,27 @@ use nom::number::complete::double;
 use nom::sequence::tuple;
 use nom::{IResult, Parser};
 
+/// A single dice term in an expression.
+///
+/// Represents one `XdY` component, e.g., `2d6` or `1d20`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DiceTerm {
+    /// Number of dice to roll.
     pub quantity: f64,
+    /// Number of sides on each die.
     pub sides: f64,
+    /// Whether this term is subtracted from the total.
     pub is_subtracted: bool,
 }
 
+/// A parsed dice request containing all terms and modifiers.
+///
+/// Created by parsing an expression like `1d20+2d6-3`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DiceRequest {
+    /// All dice terms in the expression.
     pub terms: Vec<DiceTerm>,
+    /// The numeric modifier (can be negative).
     pub modifier: f64,
 }
 
@@ -86,6 +101,9 @@ fn parse_subsequent(input: &str) -> IResult<&str, (Option<(f64, f64, bool)>, Opt
     }
 }
 
+/// Parses a dice notation expression.
+///
+/// Returns a tuple of (remaining_input, parsed_request) on success.
 pub fn dice_result(input: &str) -> IResult<&str, DiceRequest> {
     let (remaining, (first_qty, first_sides)) = parse_dice_term(input)?;
 

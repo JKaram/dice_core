@@ -1,3 +1,16 @@
+//! A library for parsing and rolling dice notation.
+//!
+//! Supports standard dice notation like `2d6`, `1d20+5`, or `1d20+2d6-3`.
+//!
+//! # Examples
+//!
+//! ```
+//! use dice_core::roll;
+//!
+//! let result = roll("2d6+3").unwrap();
+//! println!("{}", result); // e.g., "[4, 2] + 3 = 9"
+//! ```
+
 mod error;
 mod model;
 mod parser;
@@ -10,6 +23,34 @@ use rand::Rng;
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
+/// Rolls dice based on a dice notation expression.
+///
+/// # Examples
+///
+/// ```
+/// use dice_core::roll;
+///
+/// let result = roll("2d6+3").unwrap();
+/// assert_eq!(result.dice_rolls.len(), 2);
+/// assert_eq!(result.modifier, 3);
+/// ```
+///
+/// Multiple dice terms are supported:
+///
+/// ```
+/// use dice_core::roll;
+///
+/// let result = roll("1d20+1d4").unwrap();
+/// assert_eq!(result.dice_rolls.len(), 2);
+/// ```
+///
+/// # Errors
+///
+/// Returns `DiceError` if:
+/// - The expression syntax is invalid
+/// - Dice quantity or sides exceed limits (1000 dice max, 100 sides max)
+/// - Float values are used where integers are required
+/// - Quantity or sides are below 1
 pub fn roll(expression: &str) -> Result<RollResult, DiceError> {
     let request = parse_and_validate(expression)?;
     let mut rng = rand::rng();
@@ -17,6 +58,26 @@ pub fn roll(expression: &str) -> Result<RollResult, DiceError> {
     roll_dice_with_rng(&request, &mut rng)
 }
 
+/// Rolls dice with a deterministic seed for reproducible results.
+///
+/// Useful for testing or replay systems.
+///
+/// # Examples
+///
+/// ```
+/// use dice_core::roll_with_seed;
+///
+/// let seed = [42u8; 32];
+/// let result1 = roll_with_seed("2d6+5", seed).unwrap();
+/// let result2 = roll_with_seed("2d6+5", seed).unwrap();
+///
+/// assert_eq!(result1.total, result2.total);
+/// assert_eq!(result1.dice_rolls, result2.dice_rolls);
+/// ```
+///
+/// # Errors
+///
+/// Returns `DiceError` under the same conditions as `roll`.
 pub fn roll_with_seed(expression: &str, seed: [u8; 32]) -> Result<RollResult, DiceError> {
     let request = parse_and_validate(expression)?;
     let mut rng = ChaCha20Rng::from_seed(seed);
