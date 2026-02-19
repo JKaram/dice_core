@@ -4,7 +4,7 @@ mod parser;
 
 pub use error::{DiceComponent, DiceError};
 pub use model::RollResult;
-pub use parser::{DiceRequest, dice_result};
+pub use parser::{DiceRequest, DiceTerm, dice_result};
 
 use rand::Rng;
 use rand_chacha::ChaCha20Rng;
@@ -35,18 +35,42 @@ fn parse_and_validate(expression: &str) -> Result<DiceRequest, DiceError> {
 }
 
 fn validate_request(request: &DiceRequest) -> Result<(), DiceError> {
-    if request.quantity.fract() != 0.0 {
-        return Err(DiceError::FloatParseError(
-            DiceComponent::Quantity,
-            request.quantity,
-        ));
+    let mut total_dice = 0;
+
+    for term in &request.terms {
+        if term.quantity.fract() != 0.0 {
+            return Err(DiceError::FloatParseError(
+                DiceComponent::Quantity,
+                term.quantity,
+            ));
+        }
+        if term.sides.fract() != 0.0 {
+            return Err(DiceError::FloatParseError(
+                DiceComponent::Sides,
+                term.sides,
+            ));
+        }
+
+        let quantity = term.quantity as i32;
+        let sides = term.sides as i32;
+
+        if quantity <= 0 {
+            return Err(DiceError::BelowMinimum(DiceComponent::Quantity, quantity));
+        }
+        if sides <= 0 {
+            return Err(DiceError::BelowMinimum(DiceComponent::Sides, sides));
+        }
+        if sides > 100 {
+            return Err(DiceError::LimitExceeded(DiceComponent::Sides, sides));
+        }
+
+        total_dice += quantity;
     }
-    if request.sides.fract() != 0.0 {
-        return Err(DiceError::FloatParseError(
-            DiceComponent::Sides,
-            request.sides,
-        ));
+
+    if total_dice > 1000 {
+        return Err(DiceError::LimitExceeded(DiceComponent::Quantity, total_dice));
     }
+
     if request.modifier.fract() != 0.0 {
         return Err(DiceError::FloatParseError(
             DiceComponent::Modifier,
@@ -54,21 +78,6 @@ fn validate_request(request: &DiceRequest) -> Result<(), DiceError> {
         ));
     }
 
-    let quantity = request.quantity as i32;
-    let sides = request.sides as i32;
-
-    if quantity > 1000 {
-        return Err(DiceError::LimitExceeded(DiceComponent::Quantity, quantity));
-    }
-    if quantity <= 0 {
-        return Err(DiceError::BelowMinimum(DiceComponent::Quantity, quantity));
-    }
-    if sides <= 0 {
-        return Err(DiceError::BelowMinimum(DiceComponent::Sides, sides));
-    }
-    if sides > 100 {
-        return Err(DiceError::LimitExceeded(DiceComponent::Sides, sides));
-    }
     Ok(())
 }
 
@@ -85,23 +94,28 @@ fn validate_remaining(remaining: &str) -> Result<(), DiceError> {
 
 fn roll_dice_with_rng<R: Rng>(request: &DiceRequest, rng: &mut R) -> Result<RollResult, DiceError> {
     let mut dice_rolls = Vec::new();
+    let mut total = request.modifier as i32;
 
-    let quantity = request.quantity as i32;
-    let sides = request.sides as i32;
-    let modifier = request.modifier as i32;
+    for term in &request.terms {
+        let quantity = term.quantity as i32;
+        let sides = term.sides as i32;
 
-    for _ in 0..quantity {
-        let roll = rng.random_range(1..=sides);
-        dice_rolls.push(roll);
+        for _ in 0..quantity {
+            let roll = rng.random_range(1..=sides);
+            if term.is_subtracted {
+                dice_rolls.push(-roll);
+                total -= roll;
+            } else {
+                dice_rolls.push(roll);
+                total += roll;
+            }
+        }
     }
-
-    let dice_sum: i32 = dice_rolls.iter().sum();
-    let total = dice_sum + modifier;
 
     Ok(RollResult {
         total,
         dice_rolls,
-        modifier,
+        modifier: request.modifier as i32,
     })
 }
 
@@ -110,7 +124,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn display_with_positive_modifier() {
+    fn test_single_term() {
+        let result = roll_with_seed("2d6+3", [42; 32]).unwrap();
+        assert_eq!(result.dice_rolls.len(), 2);
+        assert_eq!(result.modifier, 3);
+    }
+
+    #[test]
+    fn test_two_terms() {
+        let result = roll_with_seed("1d4+1d6", [42; 32]).unwrap();
+        assert_eq!(result.dice_rolls.len(), 2);
+    }
+
+    #[test]
+    fn test_subtract_term() {
+        let result = roll_with_seed("2d6-1d4", [42; 32]).unwrap();
+        assert_eq!(result.dice_rolls.len(), 3);
+        assert!(result.dice_rolls[2] < 0);
+    }
+
+    #[test]
+    fn test_mixed_terms_and_modifier() {
+        let result = roll_with_seed("1d20+2d6-5", [42; 32]).unwrap();
+        assert_eq!(result.dice_rolls.len(), 3);
+        assert_eq!(result.modifier, -5);
+    }
+
+    #[test]
+    fn test_three_terms() {
+        let result = roll_with_seed("1d4+1d6+1d8", [42; 32]).unwrap();
+        assert_eq!(result.dice_rolls.len(), 3);
+    }
+
+    #[test]
+    fn test_total_dice_limit() {
+        let result = roll("1000d6");
+        assert!(result.is_ok());
+
+        let result = roll("1001d6");
+        assert!(matches!(result, Err(DiceError::LimitExceeded(DiceComponent::Quantity, 1001))));
+
+        let result = roll("500d6+501d4");
+        assert!(matches!(result, Err(DiceError::LimitExceeded(DiceComponent::Quantity, 1001))));
+    }
+
+    #[test]
+    fn test_display_with_positive_modifier() {
         let result = RollResult {
             total: 9,
             dice_rolls: vec![4, 2],
@@ -141,28 +200,38 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_dx() {
-        let (remaining, request) = dice_result("d6").unwrap();
-        assert_eq!(remaining, "");
-        assert_eq!(request.quantity, 1.0);
-        assert_eq!(request.sides, 6.0);
-        assert_eq!(request.modifier, 0.0);
+    fn test_display_with_negative_rolls() {
+        let result = RollResult {
+            total: 7,
+            dice_rolls: vec![5, 3, -1],
+            modifier: 0,
+        };
+        assert_eq!(result.to_string(), "[5, 3, -1] = 7");
     }
 
     #[test]
-    fn test_parse_simple_adx() {
+    fn test_parse_simple() {
         let (remaining, request) = dice_result("2d6").unwrap();
         assert_eq!(remaining, "");
-        assert_eq!(request.quantity, 2.0);
-        assert_eq!(request.sides, 6.0);
-        assert_eq!(request.modifier, 0.0);
+        assert_eq!(request.terms.len(), 1);
+        assert_eq!(request.terms[0].quantity, 2.0);
+        assert_eq!(request.terms[0].sides, 6.0);
+        assert!(!request.terms[0].is_subtracted);
     }
+
+    #[test]
+    fn test_parse_dx() {
+        let (remaining, request) = dice_result("d6").unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(request.terms[0].quantity, 1.0);
+        assert_eq!(request.terms[0].sides, 6.0);
+    }
+
     #[test]
     fn test_parse_with_positive_modifier() {
         let (remaining, request) = dice_result("2d6+5").unwrap();
         assert_eq!(remaining, "");
-        assert_eq!(request.quantity, 2.0);
-        assert_eq!(request.sides, 6.0);
+        assert_eq!(request.terms.len(), 1);
         assert_eq!(request.modifier, 5.0);
     }
 
@@ -170,8 +239,6 @@ mod tests {
     fn test_parse_with_negative_modifier() {
         let (remaining, request) = dice_result("2d6-5").unwrap();
         assert_eq!(remaining, "");
-        assert_eq!(request.quantity, 2.0);
-        assert_eq!(request.sides, 6.0);
         assert_eq!(request.modifier, -5.0);
     }
 
@@ -179,17 +246,25 @@ mod tests {
     fn test_parse_with_whitespace() {
         let (remaining, request) = dice_result(" 2d6 +5").unwrap();
         assert_eq!(remaining, "");
-        assert_eq!(request.quantity, 2.0);
-        assert_eq!(request.sides, 6.0);
+        assert_eq!(request.terms[0].quantity, 2.0);
         assert_eq!(request.modifier, 5.0);
+    }
+
+    #[test]
+    fn test_parse_two_terms() {
+        let (remaining, request) = dice_result("1d20+1d4").unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(request.terms.len(), 2);
+        assert_eq!(request.terms[0].sides, 20.0);
+        assert_eq!(request.terms[1].sides, 4.0);
     }
 
     #[test]
     fn test_parse_with_bad_operator() {
         let (remaining, request) = dice_result("2d1*5").unwrap();
         assert_eq!(remaining, "*5");
-        assert_eq!(request.quantity, 2.0);
-        assert_eq!(request.sides, 1.0);
+        assert_eq!(request.terms[0].quantity, 2.0);
+        assert_eq!(request.terms[0].sides, 1.0);
     }
 
     #[test]
@@ -252,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn test_quantity_limit_exceeded() {
+    fn test_quantity_limit_exceeded_single_term() {
         let result = roll("1001d6");
 
         match result {

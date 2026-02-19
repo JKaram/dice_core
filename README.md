@@ -5,6 +5,7 @@ dice_core parses standard dice notation (e.g., 2d6+5) and generates random resul
 ## **Features**
 
 * **Standard Notation:** Supports AdX (quantity d sides) syntax.  
+* **Multiple Dice Terms:** Roll multiple dice types in one expression (e.g., 1d20+1d4).
 * **Modifiers:** Supports positive and negative modifiers (e.g., +5, -2).  
 * **Detailed Results:** Returns the total sum, individual die faces, and the applied modifier.  
 * **Seeded RNG:** Supports deterministic rolling using a 32-byte seed.  
@@ -34,7 +35,25 @@ fn main() {
 }
 ```
 
-### **2. Deterministic Rolling**
+### **2. Multiple Dice Terms**
+
+Roll multiple dice types in a single expression.
+
+```rust
+use dice_core::roll;
+
+fn main() {
+    // Roll d20 + d4 + 3
+    let result = roll("1d20+1d4+3").unwrap();
+    println!("{}", result); // e.g., "[14, 3] + 3 = 20"
+    
+    // Subtract dice too
+    let result = roll("2d6-1d4").unwrap();
+    println!("{}", result); // e.g., "[5, 3, -2] = 6"
+}
+```
+
+### **3. Deterministic Rolling**
 
 Use `roll_with_seed` if you need reproducible results (e.g. for testing or replay systems).
 
@@ -75,8 +94,11 @@ The library accepts strings in the format: `[quantity]d[sides][modifier]`
 | `d20`       | Roll one 20-sided die (quantity defaults to 1).  |
 | `2d6+5`     | Roll two 6-sided dice and add 5 to the total.    |
 | `3d8-2`     | Roll three 8-sided dice and subtract 2 from the total. |
+| `1d20+1d4`  | Roll d20 and d4, sum the results.                |
+| `2d6-1d4+3` | Roll 2d6, subtract 1d4, add 3.                   |
 | `2D6`       | Case insensitive ('d' or 'D').                   |
 | `2d6 + 5`   | Whitespace is ignored.                           |
+| ` d6 + 1d4` | Leading/trailing whitespace ignored.             |
 
 ### Error Handling
 
@@ -104,10 +126,8 @@ The library uses a custom `DiceError` enum to handle parsing and validation fail
 
 ## **Future Features**
 
-The following features are on the herizon:
+The following features are on the horizon:
 
-* **High-Volume Rolls:** The crate will enforce a hard limit of **1,000** dice per roll (e.g., 1000d6).
-* **Multiple Dice Terms:** (e.g., 1d20+1d4)  
 * **Complex Math:** (e.g., (1d20+5)/2, 1d20*10)  
 * **"Drop/Keep" Notation:** (e.g., 4d6kh3 - "roll 4 d6, keep highest 3")  
 * **Specialized Dice:** (e.g., dF - Fate/Fudge dice)  

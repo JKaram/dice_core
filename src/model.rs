@@ -2,6 +2,7 @@ use std::fmt;
 
 pub struct RollResult {
     pub total: i32,
+    /// All individual dice rolls (flattened, negative for subtracted dice)
     pub dice_rolls: Vec<i32>,
     pub modifier: i32,
 }
