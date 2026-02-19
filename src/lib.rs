@@ -17,7 +17,7 @@ mod parser;
 
 pub use error::{DiceComponent, DiceError};
 pub use model::RollResult;
-pub use parser::{DiceRequest, DiceTerm, dice_result};
+pub use parser::{DiceRequest, DiceTerm, DropKeep, dice_result};
 
 use rand::Rng;
 use rand_chacha::ChaCha20Rng;
@@ -155,14 +155,29 @@ fn validate_remaining(remaining: &str) -> Result<(), DiceError> {
 
 fn roll_dice_with_rng<R: Rng>(request: &DiceRequest, rng: &mut R) -> Result<RollResult, DiceError> {
     let mut dice_rolls = Vec::new();
+    let mut dropped_rolls: Option<Vec<i32>> = None;
     let mut total = request.modifier as i32;
 
     for term in &request.terms {
         let quantity = term.quantity as i32;
         let sides = term.sides as i32;
 
-        for _ in 0..quantity {
-            let roll = rng.random_range(1..=sides);
+        let mut term_rolls: Vec<i32> = (0..quantity)
+            .map(|_| rng.random_range(1..=sides))
+            .collect();
+
+        // Apply drop/keep logic
+        let kept_rolls = if let Some(ref dk) = term.drop_keep {
+            let (kept, dropped) = apply_drop_keep(&term_rolls, dk, term.is_subtracted);
+            if !dropped.is_empty() {
+                dropped_rolls.get_or_insert_with(Vec::new).extend(dropped);
+            }
+            kept
+        } else {
+            term_rolls
+        };
+
+        for roll in kept_rolls {
             if term.is_subtracted {
                 dice_rolls.push(-roll);
                 total -= roll;
@@ -176,8 +191,52 @@ fn roll_dice_with_rng<R: Rng>(request: &DiceRequest, rng: &mut R) -> Result<Roll
     Ok(RollResult {
         total,
         dice_rolls,
+        dropped_rolls,
         modifier: request.modifier as i32,
     })
+}
+
+fn apply_drop_keep(rolls: &[i32], dk: &DropKeep, is_subtracted: bool) -> (Vec<i32>, Vec<i32>) {
+    let mut sorted = rolls.to_vec();
+    sorted.sort_unstable();
+
+    let (kept, dropped) = match dk {
+        DropKeep::KeepHighest(n) => {
+            let n = *n as usize;
+            let split_at = sorted.len().saturating_sub(n);
+            let dropped = sorted[..split_at].to_vec();
+            let kept = sorted[split_at..].to_vec();
+            (kept, dropped)
+        }
+        DropKeep::KeepLowest(n) => {
+            let n = *n as usize;
+            let kept = sorted[..n.min(sorted.len())].to_vec();
+            let dropped = sorted[n.min(sorted.len())..].to_vec();
+            (kept, dropped)
+        }
+        DropKeep::DropHighest(n) => {
+            let n = *n as usize;
+            let keep_count = sorted.len().saturating_sub(n);
+            let kept = sorted[..keep_count].to_vec();
+            let dropped = sorted[keep_count..].to_vec();
+            (kept, dropped)
+        }
+        DropKeep::DropLowest(n) => {
+            let n = *n as usize;
+            let dropped = sorted[..n.min(sorted.len())].to_vec();
+            let kept = sorted[n.min(sorted.len())..].to_vec();
+            (kept, dropped)
+        }
+    };
+
+    // Apply subtraction sign to dropped rolls too
+    let dropped = if is_subtracted {
+        dropped.into_iter().map(|r| -r).collect()
+    } else {
+        dropped
+    };
+
+    (kept, dropped)
 }
 
 #[cfg(test)]
@@ -234,6 +293,7 @@ mod tests {
         let result = RollResult {
             total: 9,
             dice_rolls: vec![4, 2],
+            dropped_rolls: None,
             modifier: 5,
         };
 
@@ -245,6 +305,7 @@ mod tests {
         let result = RollResult {
             total: 9,
             dice_rolls: vec![1, 7, 3],
+            dropped_rolls: None,
             modifier: -2,
         };
         assert_eq!(result.to_string(), "[1, 7, 3] - 2 = 9");
@@ -255,6 +316,7 @@ mod tests {
         let result = RollResult {
             total: 18,
             dice_rolls: vec![18],
+            dropped_rolls: None,
             modifier: 0,
         };
         assert_eq!(result.to_string(), "[18] = 18");
@@ -265,6 +327,7 @@ mod tests {
         let result = RollResult {
             total: 7,
             dice_rolls: vec![5, 3, -1],
+            dropped_rolls: None,
             modifier: 0,
         };
         assert_eq!(result.to_string(), "[5, 3, -1] = 7");
@@ -421,5 +484,66 @@ mod tests {
             Err(DiceError::BelowMinimum(DiceComponent::Sides, s)) => assert_eq!(s, 0),
             _ => panic!("Expected InvalidDieSize(0)"),
         }
+    }
+
+    #[test]
+    fn test_keep_highest_rolling() {
+        // 4d6kh3 with a seed - should roll 4 dice and keep highest 3
+        let result = roll_with_seed("4d6kh3", [42; 32]).unwrap();
+        
+        // Should have exactly 3 rolls kept
+        assert_eq!(result.dice_rolls.len(), 3);
+        // Should have 1 dropped roll
+        assert_eq!(result.dropped_rolls.as_ref().map(|d| d.len()), Some(1));
+        // Total should be sum of kept rolls only
+        let sum: i32 = result.dice_rolls.iter().sum();
+        assert_eq!(result.total, sum);
+    }
+
+    #[test]
+    fn test_keep_lowest_rolling() {
+        let result = roll_with_seed("4d6kl2", [42; 32]).unwrap();
+        
+        assert_eq!(result.dice_rolls.len(), 2);
+        assert_eq!(result.dropped_rolls.as_ref().map(|d| d.len()), Some(2));
+    }
+
+    #[test]
+    fn test_drop_highest_rolling() {
+        // 5d6dh2 = roll 5, drop highest 2, keep 3 lowest
+        let result = roll_with_seed("5d6dh2", [42; 32]).unwrap();
+        
+        assert_eq!(result.dice_rolls.len(), 3);
+        assert_eq!(result.dropped_rolls.as_ref().map(|d| d.len()), Some(2));
+    }
+
+    #[test]
+    fn test_drop_lowest_rolling() {
+        // 5d6dl2 = roll 5, drop lowest 2, keep 3 highest
+        let result = roll_with_seed("5d6dl2", [42; 32]).unwrap();
+        
+        assert_eq!(result.dice_rolls.len(), 3);
+        assert_eq!(result.dropped_rolls.as_ref().map(|d| d.len()), Some(2));
+    }
+
+    #[test]
+    fn test_keep_higher_than_roll_count() {
+        // Asking to keep 10 when only rolling 3 - should keep all 3
+        let result = roll_with_seed("3d6kh10", [42; 32]).unwrap();
+        
+        assert_eq!(result.dice_rolls.len(), 3);
+        // No dice were actually dropped, so dropped_rolls is None
+        assert!(result.dropped_rolls.is_none() || result.dropped_rolls.as_ref().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_display_with_dropped_rolls() {
+        let result = RollResult {
+            total: 12,
+            dice_rolls: vec![5, 4, 3],
+            dropped_rolls: Some(vec![1]),
+            modifier: 0,
+        };
+        assert_eq!(result.to_string(), "[5, 4, 3] ~[1] = 12");
     }
 }
